@@ -79,6 +79,21 @@ Oh yeah! the hair tearing begins! Everything seems to be in track &ndash; VPC, F
 
     ```
 
+  - If routing gets dirty! cleanup:
+
+    ```bash
+
+    #!/bin/bash
+
+    sudo ip rule flush table 1
+    sudo ip rule delete from 0/0 to 0/0 table 1
+    sudo ip route flush table 1
+    sudo ip -6 rule flush table 1
+    sudo ip -6 rule delete from ::/0 to ::/0 table 1
+    sudo ip -6 route flush table 1
+
+    ```
+
 - **Optional:** Create a service (so that, you don't lose track with VM restart!)
 
   ```systemd
@@ -99,7 +114,19 @@ Oh yeah! the hair tearing begins! Everything seems to be in track &ndash; VPC, F
 
 The first time I executed `warp-cli connect` with [WARP](https://developers.cloudflare.com/warp-client/get-started/linux/) (sounds more like, "Now from the top, make it drop, that's some WAP ...", hehe, just kidding!), I was kicked out of my own server! Had to delete and re-create the VM :pensive:, fuck!! An idiot enough not to realize that ["All device traffic is routed through WARP"](https://developers.cloudflare.com/warp-client/warp-modes/) rather than the standard local gateway. Now, as I was bent upon using [Zero Trust WARP](https://blog.cloudflare.com/zero-trust-warp-with-a-masque/), and with [split tunnels](https://www.reddit.com/r/CloudFlare/comments/14ucste/warp_on_ubuntu_vps_no_ssh_access/) being of no help! I proceeded with `warp-cli mode proxy` that establishes a tunnel for use in a SOCKS5 proxy over `127.0.0.1:40000`.
 
-To utilize this mess (yeah! I still think there could have been a better way than a damn proxy! or, maybe I'm stupid!), I fired up a WireGuard interface (say, `wg1`), but how the fuck am I supposed to interface it with a proxy? [redsocks](https://forum.proxyrack.com/t/convert-a-socks-proxy-to-http-protocol-using-nginx-and-redsocks/68)? maybe, but for me? hell nah! Time to go nuts? almost! Not if you know [Redirecting All Container Traffic via SOCKS Proxy](https://bigmike.help/en/devops/003/) using [tun2socks](https://github.com/xjasonlyu/tun2socks/wiki/Examples) &ndash; an excellent technique of using `fwmark` with `iptables -t mangle`! And, as expected, I fucked up! forgetting to [allow forwarding](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/6/html/security_guide/sect-security_guide-firewalls-forward_and_nat_rules) for `wg1`:
+To utilize this mess (yeah! I still think there could have been a better way than a damn proxy! or, maybe I'm stupid!), I fired up a WireGuard interface (say, `wg1`), but how the fuck am I supposed to interface it with a proxy? [redsocks](https://forum.proxyrack.com/t/convert-a-socks-proxy-to-http-protocol-using-nginx-and-redsocks/68)? maybe, but for me? hell nah! Time to go nuts? almost! Not if you know [Redirecting All Container Traffic via SOCKS Proxy](https://bigmike.help/en/devops/003/) using [tun2socks](https://github.com/xjasonlyu/tun2socks/wiki/Examples) &ndash; an excellent technique of using `fwmark` with `iptables -t mangle`! For me, it was:
+
+```bash
+
+#!/bin/bash
+
+tun2socks --device tun0 --proxy socks5://127.0.0.1:40000 --interface ens4
+sudo ip rule add fwmark <FWMARK> priority <PRIORITY> table <ROUTE_TABLE>
+sudo iptables -t mangle -A PREROUTING -i wg1 -p tcp -j MARK --set-mark <FWMARK>
+
+```
+
+And, as expected, I fucked up! forgetting to [allow forwarding](https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/6/html/security_guide/sect-security_guide-firewalls-forward_and_nat_rules) for `wg1`:
 
 ```bash
 
