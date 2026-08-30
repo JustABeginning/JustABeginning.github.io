@@ -1,7 +1,7 @@
 ---
 title: DVWA
 date: 2026-07-24
-update: 2026-08-15
+update: 2026-08-30
 ---
 
 **Published:** {{ page.date | date: "%a, %b %d, %Y" }}
@@ -116,6 +116,23 @@ Oh yeah! the hair tearing begins! Everything seems to be on track &ndash; VPC, F
 
   ```
 
+### The `92 B` Headache!
+
+A strange, heartbreaking, yet irritating incident! Occasionally, a perfect [WireGuard](https://vivianvoss.net/blog/wireguard-lines) [handshake](https://www.procustodibus.com/blog/2023/05/troubleshooting-wireguard-with-tcpdump/), but no internet connectivity with a `Transfer: 92 B received` status :unamused:! Logged back into the VM, did everything `wg-quick` would have allowed me to do (`down/up`) &ndash; huh! in vain! My sweet kernel [reverting `net.ipv4.ip_forward` to `0` even though set in `/etc/sysctl.conf`](https://unix.stackexchange.com/questions/256808/net-ipv4-ip-forward-reverting-to-0-even-though-set-in-etc-sysctl-conf), Awww!
+
+```bash
+
+#!/bin/bash
+
+# sysctl
+echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf     # if not done already! seriously??
+# Fix
+sudo sysctl -p
+# Verify
+sudo sysctl -a | grep ip_forward
+
+```
+
 ## Multi-Layer
 
 The first time I executed `warp-cli connect` with [WARP](https://developers.cloudflare.com/warp-client/get-started/linux/) (sounds more like, "Now from the top, make it drop, that's some WAP ...", hehe, just kidding!), I was kicked out of my own server! Had to delete and re-create the VM :pensive:, fuck!! An idiot enough not to realize that ["All device traffic is routed through WARP"](https://developers.cloudflare.com/warp-client/warp-modes/) rather than the standard local gateway. Now, as I was bent upon using [Zero Trust WARP](https://blog.cloudflare.com/zero-trust-warp-with-a-masque/), and with [split tunnels](https://www.reddit.com/r/CloudFlare/comments/14ucste/warp_on_ubuntu_vps_no_ssh_access/) being of no help! I proceeded with `warp-cli mode proxy` that establishes a tunnel for use in a SOCKS5 proxy over `127.0.0.1:40000`.
@@ -130,6 +147,7 @@ tun2socks --device tun0 --proxy socks5://127.0.0.1:40000 --interface ens4
 sudo ip route add default via <IPv4_gateway_on_tun0> dev tun0 metric <METRIC> table <ROUTE_TABLE>
 sudo ip rule add from <IPv4_network_on_tun0> table <ROUTE_TABLE>
 sudo ip rule add fwmark <FWMARK> priority <PRIORITY> table <ROUTE_TABLE>
+sudo iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE
 sudo iptables -t mangle -A PREROUTING -i wg1 -p tcp -j MARK --set-mark <FWMARK>
 
 ```
