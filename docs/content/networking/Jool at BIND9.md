@@ -1,9 +1,12 @@
 ---
 title: BJ
 date: 2026-08-15
+update: 2026-10-10
 ---
 
 **Published:** {{ page.date | date: "%a, %b %d, %Y" }}
+
+**Modified:** {{ page.update | date: "%a, %b %d, %Y" }}
 
 # Jool at BIND9
 
@@ -81,6 +84,7 @@ VPC and VM configurations are similar to that of [DVWA](</Damn Vicious Web Acces
 
     tun2socks --device tun0 --proxy socks5://127.0.0.1:40000 --interface ens4
     sudo ip route add default via <IPv4_gateway_on_tun0> dev tun0 metric <METRIC> table <ROUTE_TABLE>
+    # NECESSARY for translation
     sudo ip rule add from <IPv4_network_on_tun0> table <ROUTE_TABLE>
     # With <IPv4_gateway_on_tun0> = <IPv4_inet_on_tun0>
     sudo jool -i nat64 pool4 add --icmp <IPv4_inet_on_tun0> 61001-65535
@@ -200,7 +204,7 @@ A painstaking task of requesting one using a [Public CA](https://docs.cloud.goog
 
   ```
 
-- **Automatic renewal:** The _AppArmor_ technique mentioned in [Mastering DNS Privacy](https://medium.com/@kevintim/mastering-dns-privacy-configuring-dns-over-https-doh-and-dns-over-tls-dot-in-bind9-cc6db67aaab3) or [DNS Over HTTPS](https://www.isc.org/blogs/doh-talkdns/) for "recursive read-only access to all files and folders in `/etc/letsencrypt`" didn't work :pensive:! Having recourse to [M9A](https://unix.stackexchange.com/a/757047)'s answer, I had to chalk out a way:
+- **Automatic renewal:** The _AppArmor_ technique mentioned in [Mastering DNS Privacy](https://medium.com/@kevintim/mastering-dns-privacy-configuring-dns-over-https-doh-and-dns-over-tls-dot-in-bind9-cc6db67aaab3) or [DNS Over HTTPS](https://www.isc.org/blogs/doh-talkdns/) for "recursive read-only access to all files and folders in `/etc/letsencrypt`" didn't work :pensive:! Having recourse to [M9A](https://unix.stackexchange.com/a/757047)'s answer, I had to chalk out a way (ensuring only the latest keys):
 
   ```bash
 
@@ -209,8 +213,24 @@ A painstaking task of requesting one using a [Public CA](https://docs.cloud.goog
   CERT_DIR="<DOMAINS>"
   #
   CACHE_DIR="/var/cache/bind"
-  sudo cp -ru "/etc/letsencrypt/archive/$CERT_DIR" "$CACHE_DIR"
-  sudo chown -R bind:bind "$CACHE_DIR/$CERT_DIR"
+  ##
+  SRC_KEYS="$SRC_DIR/archive/$CERT_DIR"
+  SRC_LIVE="$SRC_DIR/live/$CERT_DIR"
+  #
+  CACHE_KEYS="$CACHE_DIR/archive"
+  CACHE_LIVE="$CACHE_DIR/live"
+  ##
+  sudo mkdir -p "$CACHE_KEYS/$CERT_DIR" "$CACHE_LIVE" && \
+      sudo chown -R bind:bind "$CACHE_KEYS" && \
+      sudo chown -R bind:bind "$CACHE_LIVE"
+  CACHE_KEYS="$CACHE_KEYS/$CERT_DIR"
+  sudo ls -t "$SRC_KEYS" | head -n 4 | xargs -I {} sudo cp -u "$SRC_KEYS/{}" "$CACHE_KEYS"
+  SIZE=$(ls -1A "$CACHE_KEYS" | wc -l)
+  [ "$SIZE" -gt 4 ] && \
+      ls -t "$CACHE_KEYS" | tail -n 4 | xargs -I {} sudo rm "$CACHE_KEYS/{}"
+  sudo cp -ru "$SRC_LIVE" "$CACHE_LIVE"
+  sudo chown -R bind:bind "$CACHE_KEYS"
+  sudo chown -R bind:bind "$CACHE_LIVE/$CERT_DIR"
 
   ```
 
@@ -228,9 +248,9 @@ A painstaking task of requesting one using a [Public CA](https://docs.cloud.goog
 
 ### Look Up
 
-- [Configure DNS64](https://oneuptime.com/blog/post/2026-03-20-dns64-bind-ipv6-only-networks/view) with a [recursive resolver](https://oneuptime.com/blog/post/2026-03-20-setup-recursive-dns64-bind/view) whilst using [systemd-resolved alongside BIND](https://oneuptime.com/blog/post/2026-03-04-systemd-resolved-alongside-bind-rhel-9/view) and [DNS over TLS](https://www.crc.id.au/2024/10/06/secure-dns-with-bind-and-dot/) in the `forwarders`:
+- [Configure DNS64](https://oneuptime.com/blog/post/2026-03-20-dns64-bind-ipv6-only-networks/view) with a [recursive resolver](https://oneuptime.com/blog/post/2026-03-20-setup-recursive-dns64-bind/view) whilst using [systemd-resolved alongside BIND](https://oneuptime.com/blog/post/2026-03-04-systemd-resolved-alongside-bind-rhel-9/view), [`allow-query-cache`](https://kb.isc.org/docs/aa-00269), [RRL](https://kb.isc.org/docs/aa-00994), [`window`](https://serverfault.com/questions/490245/bind-dns-rate-limit-and-values-for-responses-per-second-and-window), [`slip`](https://serverfault.com/questions/660992/configuring-rrl-on-a-dns-server-using-bind), limited [`tcp-clients`](https://kb.isc.org/docs/how-does-tcp-clients-work), [`recursive-clients`](https://www.zytrax.com/books/dns/ch7/queries.html), and [DNS over TLS](https://www.crc.id.au/2024/10/06/secure-dns-with-bind-and-dot/) in the `forwarders`:
 
-  ```named
+  ```nginx
 
   #/etc/bind/named.conf.options
 
@@ -241,13 +261,17 @@ A painstaking task of requesting one using a [Public CA](https://docs.cloud.goog
       192.168.0.0/16;
   };
 
+  acl "trusted" {
+      any;
+  };
+
   tls cloudflare-tls { remote-hostname "one.one.one.one"; };
 
   tls google-tls { remote-hostname "dns.google"; };
 
   tls local-tls {
-      key-file "/var/cache/bind/<DOMAINS>/privkey.pem";
-      cert-file "/var/cache/bind/<DOMAINS>/fullchain.pem";
+      key-file "/var/cache/bind/live/<DOMAINS>/privkey.pem";
+      cert-file "/var/cache/bind/live/<DOMAINS>/fullchain.pem";
   };
 
   options {
@@ -268,6 +292,22 @@ A painstaking task of requesting one using a [Public CA](https://docs.cloud.goog
       listen-on-v6 port 443 tls local-tls http default { any; };
 
       recursion yes;
+
+      allow-recursion { trusted; };
+
+      allow-query-cache { trusted; };
+
+      tcp-clients 100;
+
+      recursive-clients 25;
+
+      resolver-query-timeout 5;
+
+      rate-limit {
+          responses-per-second 10;
+          window 5;
+          slip 2;
+      };
 
       dnssec-validation auto;
 
