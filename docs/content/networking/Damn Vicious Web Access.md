@@ -8,6 +8,8 @@ update: 2026-08-30
 
 **Modified:** {{ page.update | date: "%a, %b %d, %Y" }}
 
+:hourglass: {{ page.content | number_of_words | divided_by: 200 | at_least: 1 }} min read
+
 # Damn Vicious Web Access
 
 A phrase inspired from [DVWA](https://github.com/digininja/DVWA), but the current discussion has nothing to do with penetration testing. Recently, I had been suffering from immense frustration with my internet connectivity (fuck ISP! fuck!!), and only after quite a long time was I able to figure out what was the problem! An erroneous **NAT64 translation** at the ISP end, barring me from accessing certain IPv4-only sites (GitHub, Reddit, to name a few!). To get a comprehensive view of how an ISP provided IPv6-only (primarily) network works, one can refer [Jio 5G - IPv6 only on transport](https://anuragbhatia.com/post/2023/02/jio-5g-ipv6-only/).
